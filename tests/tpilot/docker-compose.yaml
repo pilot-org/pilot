@@ -1,0 +1,14 @@
+version: "2.3"
+services:
+  ssh:
+    container_name: "ssh"
+    image: linuxserver/openssh-server
+    environment:
+      - USER_NAME=admin
+      - USER_PASSWORD=test123
+      - PASSWORD_ACCESS=true
+      - SUDO_ACCESS=true
+      - TZ=asia/taipei
+    ports:
+      - "2222:2222"
+# rm /var/run/s6/services/s6-fdholderd/rules/uid/0/env/S6_FDHOLDER_SETDUMP to login with root
