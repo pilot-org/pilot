@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 
-from . import core as pcore
+from . import agent as pagent
 from . import connection as pconn
 from . import result as pres
 
@@ -42,9 +42,9 @@ class SubprocessConnection(pconn.Connection):
         return await asyncio.create_subprocess_shell(*args, **kwargs)
 
 
-class Subprocess(pcore.ConnectLocalBase):
+class SubprocessAgent(pagent.ConnectLocalAgent):
     connection_cls = SubprocessConnection
 
     @contextlib.asynccontextmanager
-    async def _connect(connect_info, **kwargs):
+    async def _connect(enter_info, **kwargs):
         yield SubprocessConnection(**kwargs)

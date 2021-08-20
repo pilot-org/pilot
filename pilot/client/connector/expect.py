@@ -3,7 +3,7 @@ import contextlib
 import asyncssh
 import asyncclick as click
 
-from . import core as pcore
+from . import agent as pagent
 from . import result as pres
 from . import connection as pconn
 from . import subprocess as pproc
@@ -55,7 +55,7 @@ async def _prepare_expect_env(tunnel_conn: pconn.Connection) -> bool:
     return True
 
 
-class Expect(pcore.ConnectBase):
+class ExpectAgent(pagent.ConnectAgent):
     connection_cls = ExpectConnection
 
     @classmethod

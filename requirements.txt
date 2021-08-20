@@ -22,3 +22,5 @@ Jinja2
 ifcfg
 anyio
 mypy
+types-mock
+aiohttp

@@ -5,36 +5,39 @@ from .level import (
     CMD,
 )
 from .info import (
+    EnterInfo,
+    _EnterInfo,
+    LoginSSHInfo,
     ConnectInfo,
-    RemoteConnectInfo,
 )
 from .result import (
     ExitStatusNotSuccess,
     RunResult,
     CmdRunResult,
 )
-from .core import (
-    ConnectBase,
-    ConnectLocalBase,
-    ConnectRemoteBase,
+from .agent import (
+    ConnectAgent,
+    ConnectLocalAgent,
+    ConnectRemoteAgent,
 )
 from .connector import (
     Connector,
     ConnectorCachedPool,
-    scp,
-    retry,
 )
 from .connection import (
     Connection,
     RemoteConnection,
 )
 from .subprocess import (
-    Subprocess, )
+    SubprocessAgent, )
 from .asyncssh import (
-    Asyncssh,
-    AsyncsshRoot,
+    AsyncsshAgent,
+    AsyncsshConnection,
+    AsyncsshRootAgent,
 )
 from .expect import (
-    Expect, )
+    ExpectAgent, )
 from .shell import (
-    AutoShell, )
+    AutoShellAgent, )
+
+scp = AsyncsshConnection.scp

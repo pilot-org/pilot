@@ -6,6 +6,9 @@ from omegaconf import OmegaConf
 from typing import (
     Optional,
     List,
+    Tuple,
+    Dict,
+    TypeVar,
 )
 
 from pilot import conf as pconf
@@ -39,12 +42,13 @@ def test_import_class_attr():
 
 def test_import_connector():
     assert pconf._import('pilot.client.connector',
-                         'Asyncssh') == pconn.Asyncssh
+                         'AsyncsshAgent') == pconn.AsyncsshAgent
 
 
 def testex_import_by_yaml():
-    out = OmegaConf.create('cls: ${import:pilot.client.connector,Asyncssh}')
-    assert out.cls == pconn.Asyncssh
+    out = OmegaConf.create(
+        'cls: ${import:pilot.client.connector,AsyncsshAgent}')
+    assert out.cls == pconn.AsyncsshAgent
 
 
 @dataclasses.dataclass
@@ -58,6 +62,10 @@ class AllType():
     g: Optional[int]
     h: Optional[int]
     i: Optional[str]
+    j: Optional[str] = None
+    k: List[int] = dataclasses.field(default_factory=list)
+    l: Tuple[int, ...] = dataclasses.field(default_factory=tuple)
+    m: Dict[str, int] = dataclasses.field(default_factory=dict)
 
 
 def test_dataclass_convert_type():
@@ -81,7 +89,11 @@ def test_dataclass_convert_type():
                            f=[1],
                            g=None,
                            h=2,
-                           i=None)
+                           i=None,
+                           j=None,
+                           k=[],
+                           l=tuple([]),
+                           m={})
 
 
 @dataclasses.dataclass

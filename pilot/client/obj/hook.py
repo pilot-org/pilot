@@ -7,7 +7,7 @@ import inspect
 from typing import (List, Dict, Any, Callable, Optional)
 from loguru import logger
 
-from . import core
+from .error import ObjUsage
 
 _hook_map_by_name = {}
 
@@ -99,7 +99,7 @@ class HookEntry:
     @staticmethod
     def _add_hook(name, entry):
         if name in _hook_map_by_name.keys():
-            raise core.UsageError(f'{name} was registered, please use another')
+            raise ObjUsage(f'{name} was registered, please use another')
         _hook_map_by_name[name] = entry
 
     def __init__(self):
@@ -144,7 +144,7 @@ class Tester(contextlib.ExitStack):
         elif hook in _hook_map_by_name.keys():
             hook = _hook_map_by_name[hook]
         else:
-            raise core.UsageError(f'Cannot find {hook}')
+            raise ObjUsage(f'Cannot find {hook}')
 
         hook.register(func)
         yield

@@ -1,14 +1,14 @@
 import contextlib
 
-from . import core as pcore
+from . import agent as pagent
 from . import subprocess as pproc
 from . import asyncssh as pssh
 
 
-class AutoShell(pcore.ConnectBase):
+class AutoShellAgent(pagent.ConnectAgent):
     @classmethod
     @contextlib.asynccontextmanager
-    async def _connect(cls, connect_info):
+    async def _connect(cls, enter_info):
         import ifcfg
 
         def is_local_ip(ip):
@@ -17,11 +17,11 @@ class AutoShell(pcore.ConnectBase):
                     return True
             return False
 
-        if is_local_ip(connect_info.host):
-            connect_cls = pproc.Subprocess
+        if is_local_ip(enter_info.host):
+            connect_cls = pproc.SubprocessAgent
             args = ()
         else:
-            connect_cls = pssh.AsyncsshRoot
-            args = (connect_info)
+            connect_cls = pssh.AsyncsshRootAgent
+            args = enter_info
         async with connect_cls.connect(*args) as conn:
             yield conn

@@ -14,8 +14,8 @@ def get_proj_path():
 
 
 class Git:
-    def __init__(self, conn, proj_path):
-        self._conn = conn
+    def __init__(self, client, proj_path):
+        self._client = client
         self._path = proj_path
 
     @property
@@ -23,7 +23,7 @@ class Git:
         return os.path.basename(self._path)
 
     async def run(self, cmd, **kwargs):
-        return await self._conn.run(self.get_cmd(cmd), **kwargs)
+        return await self._client.run(self.get_cmd(cmd), **kwargs)
 
     def get_cmd(self, cmd):
         return f'/usr/bin/git -C {self._path} {cmd}'

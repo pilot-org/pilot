@@ -8,7 +8,7 @@ from loguru import logger
 from . import subprocess as pproc
 from . import expect as pexp
 from . import result as pres
-from . import core as pcore
+from . import agent as pagent
 from . import connection as pconn
 
 
@@ -50,19 +50,19 @@ class AsyncsshConnection(pconn.RemoteConnection):
         logger.info(f'Success to scp {sstr} to {dstr}')
 
 
-class Asyncssh(pcore.ConnectRemoteBase):
+class AsyncsshAgent(pagent.ConnectRemoteAgent):
     connection_cls = AsyncsshConnection
 
     @classmethod
     @contextlib.asynccontextmanager
-    async def _connect(cls, connect_info, **kwargs):
+    async def _connect(cls, enter_info, **kwargs):
         connection_info = {
-            'port': connect_info.port,
-            'username': connect_info.username
+            'port': enter_info.port,
+            'username': enter_info.username
         }
         ssh_kwargs = connection_info.copy()
 
-        pwd = connect_info.password
+        pwd = enter_info.password
         if pwd is not None:
             ssh_kwargs['password'] = pwd
 
@@ -71,29 +71,36 @@ class Asyncssh(pcore.ConnectRemoteBase):
         # case 1: the ip is not available
         # case 2: whthout authorized key
         try:
-            async with asyncssh.connect(connect_info.host,
+            async with asyncssh.connect(enter_info.host,
                                         known_hosts=None,
                                         **ssh_kwargs) as conn:
-                connection_info['host'] = connect_info.host
+                connection_info['host'] = enter_info.host
                 kwargs.update(connection_info)
                 yield AsyncsshConnection(conn, **kwargs)
         except (OSError, ConnectionRefusedError) as e:
             raise click.UsageError(f'Failed to connect, due to {e}') from e
 
 
-class AsyncsshRoot(Asyncssh):
+class AsyncsshRootAgent(AsyncsshAgent):
     pass_connector = True
 
     @classmethod
     @contextlib.asynccontextmanager
-    async def _connect(cls, connect_info, connector, **kwargs):
+    async def _connect(cls, enter_info, connector, **kwargs):
         @contextlib.asynccontextmanager
         async def _connect(key_set):
             try:
-                root_client_info = dataclasses.replace(connect_info,
-                                                       username='root')
-                conn = await connector.connect(Asyncssh, root_client_info,
-                                               **kwargs)
+                if enter_info.username != 'root':
+                    logger.waring(
+                        'Detected that username ({}) is not root on AsyncsshRootAgent, so changed to root',
+                        enter_info.username)
+                    root_enter_info = dataclasses.replace(enter_info,
+                                                          username='root')
+                else:
+                    root_enter_info = enter_info
+                conn = await connector.connect_by_agent(AsyncsshAgent,
+                                                        info=root_enter_info,
+                                                        **kwargs)
                 yield conn
             except asyncssh.misc.PermissionDenied as e:
                 if key_set is True:
@@ -103,11 +110,11 @@ class AsyncsshRoot(Asyncssh):
                     'Happened permission denied, so try to setup ssh key by expect. Then retry again'
                 )
 
-                local = await connector.connect(pproc.Subprocess)
+                local = await connector.connect(pproc.SubprocessAgent)
 
                 tunnel = kwargs.get('tunnel', local)
-                bridge_expect = await connector.connect(pexp.Expect,
-                                                        connect_info,
+                bridge_expect = await connector.connect(pexp.ExpectAgent,
+                                                        enter_info,
                                                         tunnel=tunnel)
 
                 res = await local.run('/bin/echo "$HOME"')
@@ -129,10 +136,10 @@ class AsyncsshRoot(Asyncssh):
                 await bridge_expect.run(
                     f'grep -q {hostname} {target_auth_path} 2>/dev/null || echo \'{pub_key}\' >> {target_auth_path}',
                     redirect_tty=True)
-                logger.warning('{}\'s {} was setuped: {}', connect_info,
+                logger.warning('{}\'s {} was setuped: {}', enter_info,
                                target_auth_path, pub_key)
 
-                logger.warning('Retry to connect {} again', connect_info)
+                logger.warning('Retry to connect {} again', enter_info)
                 async with _connect(True) as conn:
                     yield conn
 

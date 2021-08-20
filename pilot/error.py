@@ -119,7 +119,7 @@ def treat_as_need_retry(target, change_to_need_retry_exceptions=Exception):
         raise NeedRetryError(collector.errors[0])
 
 
-def retry(exception=Exception, max_get=3, interval=0):
+def retry(exception=Exception, max_get=3, interval=0, when_retry_it=None):
     if callable(exception) and (not inspect.isclass(exception)
                                 or not issubclass(exception, Exception)):
         return retry()(exception)
@@ -148,6 +148,8 @@ def retry(exception=Exception, max_get=3, interval=0):
                 logger.debug(
                     'Failed to call {}(*{}, **{}) at {} of {}, retry it',
                     raw_func.__name__, args, kwargs, i + 1, max_get)
+                if when_retry_it is not None and callable(when_retry_it):
+                    when_retry_it()
                 if interval > 0:
                     await asyncio.sleep(interval)
 

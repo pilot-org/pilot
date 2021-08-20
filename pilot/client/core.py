@@ -1,59 +1,119 @@
+from __future__ import annotations
 import os
 import contextlib
 import async_property
 import tempfile
 import asyncclick as click
+from loguru import logger
+from typing import (
+    ClassVar,
+    Generic,
+    Optional,
+    TypeVar,
+    Union,
+    Tuple,
+    Dict,
+    Type,
+    overload,
+    Final,
+)
 
+from . import spec as pspec
 from . import connector as pconn
 from . import obj as pobj
 
+Agent = TypeVar('Agent', bound=pconn.ConnectAgent)
+Spec = pspec.ClientSpec
+Conn = TypeVar('Conn', bound=pconn.Connection)
+SubID = TypeVar('SubID', str, int)
+
+
+class _PerClientConnector(pconn.Connector):
+    def __init__(self, spec: Spec):
+        super().__init__()
+        self._spec = spec
+
+    @overload
+    async def connect(self, conn_agent: Type[Agent],
+                      sub_id: Optional[SubID]) -> Agent.connection_cls:
+        ...
+
+    @overload
+    async def connect(self, connect_name: str,
+                      sub_id: Optional[SubID]) -> Conn:
+        ...
+
+    async def connect(self, conn, sub_id):
+        setting = self._spec.get_connect_setting(conn)
+        agent = setting.connect_agent
+        enter_info, args, kwargs = self._spec.get_enter_info(setting)
+        return await self.connect_by_agent(
+            agent,
+            *args,
+            info=None
+            if issubclass(agent, pconn.ConnectLocalAgent) else enter_info,
+            conn_id=setting.name,
+            sub_id=sub_id,
+            **kwargs)
+
 
 class Client(pobj.ObjOwner):
-    def __init__(self, client_info, *, connector, pool, name=None):
-        self._client_info = client_info
-        self._name = name or client_info.host
+    def __init__(self,
+                 *,
+                 spec: Spec,
+                 connector: _PerClientConnector,
+                 name: Optional[str] = None):
+        super().__init__()
+        self._spec = spec
+        self._name = name or spec.enter_info.info_str
         self._connector = connector
-        self._pool = pool
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'<{self.__class__.__name__} {self._name}>'
 
-    def __eq__(self, other):
-        return self._client_info == other._client_info
+    def __eq__(self, other) -> bool:
+        return self._client_spec == other._client_spec
 
-    @property
-    def connector(self):
-        return self._connector
+    @overload
+    async def connect(self,
+                      conn: Type[Agent],
+                      sub_id: Optional[SubID] = ...) -> Agent.connection_cls:
+        ...
 
-    async def connect(self, connect_cls, sub_id=None):
-        connect_info, args, kwargs = self._client_info.get_connect_info(
-            connect_cls)
-        return await self._connector.general_connect(connect_cls,
-                                                     connect_info,
-                                                     *args,
-                                                     sub_id=sub_id,
-                                                     **kwargs)
+    @overload
+    async def connect(self, conn: str, sub_id: Optional[SubID] = None) -> Conn:
+        ...
 
-    async def close_all(self):
+    async def connect(self, conn, sub_id=None):
+        return await self._connector.connect(conn, sub_id)
+
+    async def close_all(self) -> None:
         self._connector.close_all()
 
 
-class ShellClient(Client):
-    @async_property.async_cached_property
-    async def shell(self):
-        return await self.connect(self._shell_cls)
+_Client = TypeVar('_Client', bound=Client)
 
-    async def close_all(self):
+
+class ShellClient(Client, Generic[Agent]):
+    _shell_agent: ClassVar[Agent]
+
+    @async_property.async_cached_property
+    async def shell(self) -> Agent.connection_cls:
+        return await self.connect(self._shell_agent)
+
+    async def close_all(self) -> None:
         if self.__class__.shell.has_cache_value(self):
             del self.shell
         await super().close_all()
 
-    async def run(self, *args, **kwargs):
+    async def run(self, *args, **kwargs) -> pconn.RunResult:
         shell = await self.shell
         return await shell.run(*args, **kwargs)
 
     @staticmethod
-    async def scp(source, destination, **kwargs):
+    async def scp(source: Union[str, Tuple[ShellClient, str]],
+                  destination: Union[str, Tuple[ShellClient,
+                                                str]], **kwargs) -> None:
         async def t(target):
             if isinstance(target, tuple):
                 target = (await target[0].shell, target[1])
@@ -62,7 +122,7 @@ class ShellClient(Client):
         return await pconn.scp(await t(source), await t(destination), **kwargs)
 
     @contextlib.asynccontextmanager
-    async def use_file(self, file, write_mode=False):
+    async def use_file(self, file: str, write_mode: bool = False) -> str:
         tmp_path = tempfile.mktemp(suffix='ssstool_open_')
         await self.scp((self, file), tmp_path)
         yield tmp_path
@@ -71,64 +131,80 @@ class ShellClient(Client):
         os.remove(tmp_path)
 
     @contextlib.asynccontextmanager
-    async def open(self, file, mode, *args, **kwargs):
+    async def open(self, file: str, mode: str, *args, **kwargs):
         async with self.use_file(file, write_mode='w' in mode) as fpath:
             with open(fpath, mode, *args, **kwargs) as f:
                 yield f
 
 
 class SubprocessClient(ShellClient):
-    _shell_cls = pconn.Subprocess
+    _shell_agent: Final[Type[pconn.SubprocessAgent]] = pconn.SubprocessAgent
 
-    async def reboot(self):
+    async def reboot(self) -> pconn.RunResult:
         raise click.UsageError(
             'localhost cannot reboot. Otherwise process will be killed')
 
 
 class AsyncsshClient(ShellClient):
-    _shell_cls = pconn.Asyncssh
+    _shell_agent: ClassVar[Agent] = pconn.AsyncsshAgent
 
-    async def reboot(self, **kwargs):
+    async def reboot(self, **kwargs) -> pconn.RunResult:
         res = await self._reboot(**kwargs)
         await self.close_all()
         return res
 
-    async def _reboot(self):
-        return self.run('reboot')
+    async def _reboot(self) -> pconn.RunResult:
+        return await self.run('reboot')
 
 
 class ClientCachedPool(contextlib.AsyncExitStack):
-    def __init__(self, client_info_map):
+    @classmethod
+    def from_dict(cls, infos):
+        return cls({
+            name: pspec.ClientSpec.from_dict(info)
+            for name, info in infos.items()
+        })
+
+    def __init__(self, client_info_map: Dict[str, Spec]):
         super().__init__()
-        self._clients = client_info_map
+        self._client_specs: Dict[str, Spec] = client_info_map
 
     @async_property.async_cached_property
-    async def connector_pool(self):
-        return await self.enter_async_context(pconn.ConnectorCachedPool())
+    async def connector_pool(
+            self) -> pconn.ConnectorCachedPool[_PerClientConnector]:
+        return await self.enter_async_context(
+            pconn.ConnectorCachedPool(connector_type=_PerClientConnector))
 
-    def get_client_info(self, client_id):
-        if client_id == 'localhost':
-            return pconn.local_info
-        client_info = self._clients.get(client_id)
-        if client_info is None:
-            raise click.UsageError(f'Not find client: {client_id}')
-        return client_info
+    def get_client_spec(self, client_name) -> Spec:
+        # TODO: fix localhost
+        client_spec = self._client_specs.get(client_name)
+        if client_spec is None:
+            raise click.UsageError(f'Not find client by id: {client_name}')
+        return client_spec
 
-    async def get_client(self, client_id):
-        client_info = self.get_client_info(client_id)
-        name = client_id
-        client_type = client_info.spec.client_type
+    async def get_client(self, client_name: str, *args, **kwargs) -> _Client:
+        spec = self.get_client_spec(client_name)
         connector_pool = await self.connector_pool
-        connector = await connector_pool.get(client_id)
-        return client_type(client_info,
-                           connector=connector,
-                           pool=self,
-                           name=name)
+        connector = await connector_pool.get(client_name, spec)
+        return spec.gen_client(*args,
+                               connector=connector,
+                               name=client_name,
+                               **kwargs)
 
     async def get_client_obj_getter(
         self,
         client,
         checker=None,
     ):
-        client = await self.get_client(client)
+        client = await self.get_client_spec(client)
         return pobj.ClientObjGetter(client=client, checker=checker)
+
+
+def get_localhost_spec_info(client_cls: Type[_Client] = SubprocessClient,
+                            conn_name='localhost'):
+    return pspec.ClientSpec(force_client_type=client_cls,
+                            connect_settings=[
+                                pspec.ConnectSetting(
+                                    name=conn_name,
+                                    force_connect_agent=pconn.SubprocessAgent)
+                            ])

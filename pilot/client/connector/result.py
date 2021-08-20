@@ -2,8 +2,6 @@ import asyncclick as click
 from loguru import logger
 from abc import (ABC, abstractmethod)
 
-from . import core as pconn
-
 
 class ExitStatusNotSuccess(Exception):
     def __init__(self, msg, result):
@@ -18,7 +16,7 @@ class ExitStatusNotSuccess(Exception):
 class RunResult(ABC):
     def __init__(self, args, kwargs, origin, connection=None, check=True):
         if origin is None:
-            pconn.UsageError('Must pass result')
+            click.UsageError('Must pass result')
         self._args = args
         self._kwargs = kwargs
         self._origin = origin

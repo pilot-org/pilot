@@ -6,4 +6,9 @@ from .core import (
     ClientCachedPool,
 )
 from .spec import (
-    ClientInfo, )
+    ClientSpec, )
+
+from .info import (
+    CachedInfoUtil,
+    NetworkInfo,
+)

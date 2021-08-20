@@ -1,6 +1,7 @@
 import unittest
 import os
 
+from sclick import cli
 from pilot import remote_config
 
 
@@ -13,7 +14,7 @@ class TestRemoteConfig(unittest.IsolatedAsyncioTestCase):
             'test1': 1,
             'test2': '2',
         }
-        repo = cli._CliRepo(cli._default_cfg_path) # TODO mock it
+        repo = cli._CliRepo(cli._default_cfg_path)
         async with repo.manage_connection() as mgr_util:
             conn = await mgr_util.mgr.get_conn_by_name(self.test_ds_name)
             await conn.run(f'/bin/rm -rf {os.path.dirname(self.test_path)}')

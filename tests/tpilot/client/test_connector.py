@@ -1,161 +1,165 @@
 import pytest
 import mock
 import asyncclick as click
+from loguru import logger
 
 from pilot.client import connector as pconn
-from pilot.client.connector.info import _local_info
+from pilot.client.connector.info import _local_enter_info
 
 
-def test_connect_info():
-    with pytest.raises(TypeError):
-        pconn.ConnectInfo()
+class TestConnectAgent(pconn.ConnectAgent):
+    required_enter_info_type = pconn.EnterInfo
+
+    @classmethod
+    def _connect(cls, *args, **kwargs):
+        pass
 
 
-@pytest.mark.parametrize('client_dict', [{
-    'id': 't1',
-    'host': 'localhost',
-}, {
-    'id': 't2',
-    'username': 'admin',
-}])
-def test_remote_info(client_dict):
-    with pytest.raises(TypeError):
-        pconn.RemoteConnectInfo(*client_dict)
+class TestConnectLocalAgent(pconn.ConnectLocalAgent):
+    required_enter_info_type = pconn.EnterInfo
+
+    @classmethod
+    def _connect(cls, *args, **kwargs):
+        pass
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect')
-async def test_connect_base_yield(mock_connect):
+@mock.patch(f'{__name__}.TestConnectAgent._connect')
+async def test_connect_agent_yield(mock_connect):
     connection = mock.AsyncMock()
     mock_connect.return_value.__aenter__ = mock.AsyncMock(
         return_value=connection)
-    client_info = mock.MagicMock(spec=pconn.ConnectInfo)
-    async with pconn.ConnectBase.connect(client_info) as conn:
+    enter_info = mock.MagicMock(spec=pconn.EnterInfo)
+    async with TestConnectAgent.connect(enter_info) as conn:
         assert conn == connection
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect')
-async def test_connect_base_normal_args(mock_connect):
-    client_info = mock.MagicMock(spec=pconn.ConnectInfo)
-    async with pconn.ConnectBase.connect(client_info) as conn:
+@mock.patch(f'{__name__}.TestConnectAgent._connect')
+async def test_connect_agent_normal_args(mock_connect):
+    client_info = mock.MagicMock(spec=pconn.EnterInfo)
+    async with TestConnectAgent.connect(client_info) as conn:
         mock_connect.assert_called_once_with(client_info)
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect')
-@mock.patch('pilot.client.connector.core.ConnectBase.pass_connector', True)
-async def test_connect_base_pass_connector_success(mock_connect):
-    client_info = mock.MagicMock(spec=pconn.ConnectInfo)
+@mock.patch(f'{__name__}.TestConnectAgent._connect')
+@mock.patch(f'{__name__}.TestConnectAgent.pass_connector', True)
+async def test_connect_agent_pass_connector_success(mock_connect):
+    enter_info = mock.MagicMock(spec=pconn.EnterInfo)
     connector = mock.AsyncMock(spec=pconn.ConnectorCachedPool)
-    async with pconn.ConnectBase.connect(client_info, connector=connector) as conn:
-        mock_connect.assert_called_once_with(client_info, connector=connector)
+    async with TestConnectAgent.connect(enter_info,
+                                        connector=connector) as conn:
+        mock_connect.assert_called_once_with(enter_info, connector=connector)
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect')
-@mock.patch('pilot.client.connector.core.ConnectBase.pass_connector', True)
-async def test_connect_base_pass_connector_failed(mock_connect):
-    client_info = mock.MagicMock(spec=pconn.ConnectInfo)
+@mock.patch(f'{__name__}.TestConnectAgent._connect')
+@mock.patch(f'{__name__}.TestConnectAgent.pass_connector', True)
+async def test_connect_agent_pass_connector_failed(mock_connect):
+    enter_info = mock.MagicMock(spec=pconn.EnterInfo)
     with pytest.raises(click.UsageError):
-        async with pconn.ConnectBase.connect(client_info) as conn:
+        async with TestConnectAgent.connect(enter_info) as conn:
             pass
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect')
-@pytest.mark.urulogs('pilot.client.connector.core')
-async def test_connect_base_show_connect_normal_log(mock_connect, urulogs):
-    client_info = mock.MagicMock(spec=pconn.ConnectInfo)
-    client_info.__repr__ = mock.MagicMock(return_value='TestClientInfo')
-    async with pconn.ConnectBase.connect(client_info) as conn:
+@mock.patch(f'{__name__}.TestConnectAgent._connect')
+@pytest.mark.urulogs('pilot.client.connector.agent')
+async def test_connect_agent_show_connect_normal_log(mock_connect, urulogs):
+    enter_info = mock.MagicMock(spec=pconn.EnterInfo)
+    enter_info.__repr__ = mock.MagicMock(return_value='TestEnterInfo')
+    async with TestConnectAgent.connect(enter_info) as conn:
         assert urulogs.output == [
-            'CONNECTION:pilot.client.connector.core:Start to exter TestClientInfo by ConnectBase',
-            'CONNECTION:pilot.client.connector.core:Success to exter TestClientInfo by ConnectBase',
+            'CONNECTION:pilot.client.connector.agent:Start to enter TestEnterInfo by TestConnectAgent',
+            'CONNECTION:pilot.client.connector.agent:Success to enter TestEnterInfo by TestConnectAgent',
         ]
         urulogs.clear()
     assert urulogs.output == [
-        'CONNECTION:pilot.client.connector.core:Success to exit TestClientInfo by ConnectBase',
-        'CONNECTION:pilot.client.connector.core:Close TestClientInfo',
+        'CONNECTION:pilot.client.connector.agent:Success to exit TestEnterInfo by TestConnectAgent',
+        'CONNECTION:pilot.client.connector.agent:Close TestEnterInfo',
     ]
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect',
-            side_effect=Exception)
-@pytest.mark.urulogs('pilot.client.connector.core')
-async def test_connect_base_show_connect_failed_log(mock_connect, urulogs):
-    client_info = mock.MagicMock(spec=pconn.ConnectInfo)
-    client_info.__repr__ = mock.MagicMock(return_value='TestClientInfo')
+@mock.patch(f'{__name__}.TestConnectAgent._connect', side_effect=Exception)
+@pytest.mark.urulogs('pilot.client.connector.agent')
+async def test_connect_agent_show_connect_failed_log(mock_connect, urulogs):
+    enter_info = mock.MagicMock(spec=pconn.EnterInfo)
+    enter_info.__repr__ = mock.MagicMock(return_value='TestEnterInfo')
     with pytest.raises(Exception):
-        async with pconn.ConnectBase.connect(client_info) as conn:
+        async with TestConnectAgent.connect(enter_info) as conn:
             # TODO: fix me
             assert urulogs.output == []
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect')
-@pytest.mark.urulogs('pilot.client.connector.core')
-async def test_connect_base_show_connect_failed_log_by_other(
+@mock.patch(f'{__name__}.TestConnectAgent._connect')
+@pytest.mark.urulogs('pilot.client.connector.agent')
+async def test_connect_agent_show_connect_failed_log_by_other(
         mock_connect, urulogs):
-    client_info = mock.MagicMock(spec=pconn.ConnectInfo)
-    client_info.__repr__ = mock.MagicMock(return_value='TestClientInfo')
+    enter_info = mock.MagicMock(spec=pconn.EnterInfo)
+    enter_info.__repr__ = mock.MagicMock(return_value='TestEnterInfo')
     with pytest.raises(Exception):
-        async with pconn.ConnectBase.connect(client_info) as conn:
+        async with TestConnectAgent.connect(enter_info) as conn:
             urulogs.clear()
             raise Exception('testcase')
 
     assert urulogs.output == [
-        'WARNING:pilot.client.connector.core:Failed to do some operation on TestClientInfo by ConnectBase, due to testcase',
+        'WARNING:pilot.client.connector.agent:Failed to do some operation on TestEnterInfo by TestConnectAgent, due to testcase',
     ]
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectLocalBase._connect')
-async def test_connect_local_base_pass_client_info(mock_connect):
-    async with pconn.ConnectLocalBase.connect() as conn:
-        mock_connect.assert_called_once_with(_local_info)
+@mock.patch(f'{__name__}.TestConnectLocalAgent._connect')
+async def test_connect_local_agent_pass_client_info(mock_connect):
+    async with TestConnectLocalAgent.connect() as conn:
+        mock_connect.assert_called_once_with(_local_enter_info)
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect')
-async def testex_connector_connect_base(mock_connect):
+@mock.patch(f'{__name__}.TestConnectAgent._connect')
+async def testex_connector_connect_agent(mock_connect):
     conn1 = mock.AsyncMock()
     conn2 = mock.AsyncMock()
     mock_connect.return_value.__aenter__ = mock.AsyncMock(
         side_effect=[conn1, conn2])
-    connect_info = mock.MagicMock
+    enter_info = mock.MagicMock(spec=pconn.EnterInfo)
     async with pconn.Connector() as connector:
         # Lasy connect
         mock_connect.assert_not_called()
 
         # equal use pcore.connect
-        conn = await connector.connect(pconn.ConnectBase, connect_info)
+        conn = await connector.connect_by_agent(TestConnectAgent,
+                                                info=enter_info)
         assert conn == conn1
-        mock_connect.assert_called_once_with(connect_info)
+        mock_connect.assert_called_once_with(enter_info)
 
         # connection will be cached
-        assert await connector.connect(pconn.ConnectBase, connect_info) == conn
+        assert await connector.connect_by_agent(TestConnectAgent,
+                                                info=enter_info) == conn
 
         # get other connection by conn_id
-        conn = await connector.connect(pconn.ConnectBase, connect_info, sub_id='2')
+        conn = await connector.connect_by_agent(TestConnectAgent,
+                                                info=enter_info,
+                                                sub_id=2)
         assert conn == conn2
         mock_connect.call_count == 2
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect')
+@mock.patch(f'{__name__}.TestConnectLocalAgent._connect')
 async def test_connector_connect_local(mock_connect):
     conn1 = mock.AsyncMock()
-    mock_connect.return_value.__aenter__ = mock.AsyncMock(
-        return_value=conn1)
+    mock_connect.return_value.__aenter__ = mock.AsyncMock(return_value=conn1)
     async with pconn.Connector() as connector:
-        conn = await connector.connect(pconn.ConnectLocalBase)
+        conn = await connector.connect_by_agent(TestConnectLocalAgent)
         assert conn == conn1
-        mock_connect.assert_called_once_with(_local_info)
+        mock_connect.assert_called_once_with(_local_enter_info)
+
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect')
+@mock.patch(f'{__name__}.TestConnectLocalAgent._connect')
 async def test_connector_close_all(mock_connect):
     conn1 = mock.AsyncMock()
     conn2 = mock.AsyncMock()
@@ -163,26 +167,24 @@ async def test_connector_close_all(mock_connect):
     mock_connect.return_value.__aenter__ = mock.AsyncMock(
         side_effect=[conn1, conn2, conn3])
     async with pconn.Connector() as connector:
-        await connector.connect(pconn.ConnectLocalBase)
-        await connector.connect(pconn.ConnectLocalBase, sub_id='2')
+        await connector.connect_by_agent(TestConnectLocalAgent)
+        await connector.connect_by_agent(TestConnectLocalAgent, sub_id='2')
 
         await connector.close_all()
         assert mock_connect.return_value.__aexit__.call_count == 2
 
-        c3 = await connector.connect(pconn.ConnectLocalBase)
+        c3 = await connector.connect_by_agent(TestConnectLocalAgent)
         assert c3 == conn3
         assert mock_connect.return_value.__aenter__.call_count == 3
 
 
 @pytest.mark.asyncio
-@mock.patch('pilot.client.connector.core.ConnectBase._connect')
+@mock.patch(f'{__name__}.TestConnectAgent._connect')
 async def test_connector_pool(mock_connect):
-    client_info = mock.MagicMock(spec=pconn.ConnectInfo)
+    enter_info = mock.MagicMock(spec=pconn.EnterInfo)
     async with pconn.ConnectorCachedPool() as pool:
-        connector = await pool.get(client_info)
+        connector = await pool.get(enter_info)
         assert isinstance(connector, pconn.Connector)
-
-
 
 
 '''

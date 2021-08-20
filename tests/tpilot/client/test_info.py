@@ -1,23 +1,23 @@
 import pytest
-import mock
-import asyncio
 
 from pilot.client import core as pclient
-from pilot.client import obj as pobj
-from pilot.client.obj import info as pinfo
+from pilot.client import info as pinfo
+from pilot.client import mock as pmock
 
 
-class _ClientInfo(pobj.SingletonObj, pobj.NetworkInfo):
-    def __init__(self, owner):
-        super().__init__(owner=owner)
-        self.client = owner
+class ClientBaseForTest(pclient.Client):
+    async def run(self, *args, **kwargs):
+        conn = await self.connect('test')
+        return await conn.run(*args, **kwargs)
 
 
 @pytest.mark.asyncio
 async def test_ip_addr():
-    client = mock.AsyncMock(pclient.Client)
-    with mock.patch(
-            'pilot.client.connector.result.RunResult',
+    class ClientForTest(ClientBaseForTest):
+        info = pinfo.NetworkInfo.as_property()
+
+    async with pmock.mock_client_run(ClientForTest) as it:
+        it.mock_run.return_value = pmock.mock_cmd_result(
             exit_status=0,
             stdout=
             '''1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN
@@ -47,11 +47,8 @@ async def test_ip_addr():
     inet 169.254.104.94/16 brd 169.254.255.255 scope global eth3
        valid_lft forever preferred_lft forever
 ''',
-            stderr='') as result:
-        client.run = mock.AsyncMock(return_value=result)
-        client.obj_stores = {}
-        client.info_getter_stores = {}
-        info = _ClientInfo(owner=client)
+            stderr='')
+        info = it.client.info
         ip_info_enum = await info.ip_info_enum
         assert ip_info_enum == {
             'lo':
@@ -65,14 +62,9 @@ async def test_ip_addr():
             'eth3':
             pinfo._IpInfo('eth3', '169.254.104.94', '00:11:32:aa:bb:23', 16)
         }
-        client.run.assert_awaited_once_with('/sbin/ip addr',
-                                            redirect_stderr_tty=True)
+        it.mock_run.assert_awaited_once_with('/sbin/ip addr',
+                                             redirect_stderr_tty=True,
+                                             read_only=True)
 
         # check ip_info_enum is cached
         assert ip_info_enum == await info.ip_info_enum
-        client.run.assert_awaited_once
-
-        # check delete
-        del info.ip_info_enum
-        assert ip_info_enum == await info.ip_info_enum
-        assert client.run.await_count == 2

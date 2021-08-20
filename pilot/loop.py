@@ -1,6 +1,10 @@
 import functools
 import contextlib
 import anyio
+from typing import (
+    TypeVar, )
+
+Func = TypeVar('Func')
 
 
 async def gather(*coros):
@@ -29,10 +33,14 @@ class TaskGroup:
     def start_soon(self, *args, **kwargs):
         return self._origin.start_soon(*args, **kwargs)
 
-    def start(self, *args, **kwargs):
-        return self._origin.start(*args, **kwargs)
+    async def start(self, raw_func, *args, **kwargs):
+        @functools.wraps(raw_func)
+        async def func(*, task_status):
+            return await raw_func(*args, task_status=task_status, **kwargs)
 
-    def start_task(self, func, *args, **kwargs):
+        return await self._origin.start(func)
+
+    def start_task(self, func: Func, *args, **kwargs):
         res = None
 
         async def notify(event):
@@ -53,6 +61,6 @@ class TaskGroup:
 
 
 @contextlib.asynccontextmanager
-async def create_task_group():
+async def create_task_group() -> TaskGroup:
     async with anyio.create_task_group() as tg:
         yield TaskGroup(tg)
